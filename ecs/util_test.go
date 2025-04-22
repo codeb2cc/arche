@@ -1,6 +1,7 @@
 package ecs
 
 import (
+	"sync"
 	"testing"
 	"unsafe"
 
@@ -136,6 +137,32 @@ func TestPagedSlicePointerPersistence(t *testing.T) {
 	assert.Equal(t, unsafe.Pointer(p1), unsafe.Pointer(p2))
 	*p1 = 100
 	assert.Equal(t, int32(100), *p2)
+}
+
+func TestLockMask_Concurrency(t *testing.T) {
+	locks := &lockMask{}
+	const goroutines = 16
+	var wg sync.WaitGroup
+	lockVals := make(chan uint8, goroutines)
+
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			lock := locks.Lock()
+			lockVals <- lock
+		}()
+	}
+	wg.Wait()
+	close(lockVals)
+
+	seen := make(map[uint8]bool)
+	for l := range lockVals {
+		if seen[l] {
+			t.Errorf("duplicate lock value detected: %d", l)
+		}
+		seen[l] = true
+	}
 }
 
 func BenchmarkPagedSlice_Get(b *testing.B) {

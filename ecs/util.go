@@ -3,6 +3,7 @@ package ecs
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/mlange-42/arche/ecs/event"
 )
@@ -95,10 +96,14 @@ func subscribes(trigger event.Subscription, added *Mask, removed *Mask, subs *Ma
 type lockMask struct {
 	locks   Mask    // The actual locks.
 	bitPool bitPool // The bit pool for getting and recycling bits.
+	mu      sync.Mutex
 }
 
 // Lock the world and get the Lock bit for later unlocking.
 func (m *lockMask) Lock() uint8 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	lock := m.bitPool.Get()
 	m.locks.Set(id(lock), true)
 	return lock
@@ -106,6 +111,9 @@ func (m *lockMask) Lock() uint8 {
 
 // Unlock unlocks the given lock bit.
 func (m *lockMask) Unlock(l uint8) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if !m.locks.Get(id(l)) {
 		panic("unbalanced unlock. Did you close a query that was already iterated?")
 	}
@@ -115,11 +123,17 @@ func (m *lockMask) Unlock(l uint8) {
 
 // IsLocked returns whether the world is locked by any queries.
 func (m *lockMask) IsLocked() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	return !m.locks.IsZero()
 }
 
 // Reset the locks and the pool.
 func (m *lockMask) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.locks = Mask{}
 	m.bitPool.Reset()
 }
